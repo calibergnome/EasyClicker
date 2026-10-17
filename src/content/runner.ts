@@ -111,17 +111,14 @@ function findNPInSameShopItem(baseEl: Element): { el: Element; npText: string } 
   const container = cur as Element;
 
   // search for elements inside container that contain a number followed by 'NP'
-  const walker = document.createTreeWalker(container, NodeFilter.SHOW_ELEMENT, null as any, false);
-  const matches: Array<{ el: Element; text: string }> = [];
-  // pattern: capture group for number followed by optional whitespace and 'NP' word boundary
   const re = /([0-9,.]+)\s*NP\b/i;
+  const nodeList = Array.from(container.querySelectorAll<HTMLElement>('*'));
+  const matches: Array<{ el: Element; text: string }> = [];
 
-  while (walker.nextNode()) {
-    const node = walker.currentNode as Element;
-    if (!node) continue;
-    const style = window.getComputedStyle(node as Element);
+  for (const node of nodeList) {
+    const style = window.getComputedStyle(node);
     if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') continue;
-    const txt = (node as HTMLElement).innerText || '';
+    const txt = node.innerText || '';
     const m = txt.match(re);
     if (m && m[1]) {
       matches.push({ el: node, text: m[1] });
@@ -153,7 +150,7 @@ function findNPInSameShopItem(baseEl: Element): { el: Element; npText: string } 
   if (!best) return null;
 
   // normalize numeric text: remove commas/spaces
-  const normalized = best.text.replace(/[,\s]/g, '');
+  const normalized = best.text.replace(/[ ,\s]/g, '');
   return { el: best.el, npText: normalized };
 }
 
