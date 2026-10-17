@@ -1,1 +1,1 @@
-Update call sites to use clickNearestVisuallyAbove
+Exclude extension overlay from candidate results in visual click helper

@@ -7,6 +7,9 @@ export function clickNearestVisuallyAbove(target: Element | string, candidateSel
 
   const targetRect = (targetEl as Element).getBoundingClientRect();
 
+  // Exclude the extension's own overlay so we don't accidentally click our UI
+  const overlayEl = document.getElementById('ec-page-overlay');
+
   function isCandidateVisible(el: Element) {
     if (!(el instanceof Element)) return false;
     const style = window.getComputedStyle(el as Element);
@@ -19,7 +22,13 @@ export function clickNearestVisuallyAbove(target: Element | string, candidateSel
 
   const nodeList = Array.from(document.querySelectorAll(candidateSelector));
   const candidates = nodeList
-    .filter((c) => c !== targetEl && document.body.contains(c) && isCandidateVisible(c))
+    .filter((c) =>
+      c !== targetEl &&
+      document.body.contains(c) &&
+      // skip candidates that are inside our extension overlay
+      (!overlayEl || !overlayEl.contains(c)) &&
+      isCandidateVisible(c),
+    )
     .map((c) => ({ el: c as Element, rect: (c as Element).getBoundingClientRect() }));
 
   let best: Element | null = null;
