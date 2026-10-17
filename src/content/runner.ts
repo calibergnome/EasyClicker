@@ -95,59 +95,66 @@ class WorkerTimer {
 
 const timer = new WorkerTimer();
 
-// Utility: find nearest element visually below `baseEl` whose innerText contains "Cost:" followed by a number
-function findNearestBelowWithCost(baseEl: Element): { el: Element; costText: string } | null {
+// Utility: find element in the same .shop-item container that contains a number followed by "NP"
+function findNPInSameShopItem(baseEl: Element): { el: Element; npText: string } | null {
   if (!baseEl || !(baseEl instanceof Element)) return null;
+
+  // find nearest ancestor with class 'shop-item'
+  let cur: Element | null = baseEl;
+  while (cur && cur !== document.documentElement) {
+    if (cur.classList && cur.classList.contains('shop-item')) break;
+    cur = cur.parentElement;
+  }
+
+  if (!cur || cur === document.documentElement) return null;
+
+  const container = cur as Element;
+
+  // search for elements inside container that contain a number followed by 'NP'
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_ELEMENT, null as any, false);
+  const matches: Array<{ el: Element; text: string }> = [];
+  // pattern: capture group for number followed by optional whitespace and 'NP' word boundary
+  const re = /([0-9,.]+)\s*NP\b/i;
+
+  while (walker.nextNode()) {
+    const node = walker.currentNode as Element;
+    if (!node) continue;
+    const style = window.getComputedStyle(node as Element);
+    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') continue;
+    const txt = (node as HTMLElement).innerText || '';
+    const m = txt.match(re);
+    if (m && m[1]) {
+      matches.push({ el: node, text: m[1] });
+    }
+  }
+
+  if (matches.length === 0) return null;
+
+  // prefer the match closest to baseEl by vertical proximity (absolute distance between centers)
   const baseRect = baseEl.getBoundingClientRect();
-
-  // Exclude extension overlay
-  const overlayEl = document.getElementById('ec-page-overlay');
-
-  const candidates = Array.from(document.querySelectorAll('*'))
-    .filter((c) => c !== baseEl && document.body.contains(c) && (!overlayEl || !overlayEl.contains(c)))
-    .map((c) => ({ el: c as Element, rect: (c as Element).getBoundingClientRect() }))
-    .filter(({ el, rect }) => {
-      // must be below
-      if (rect.top < baseRect.bottom) return false;
-      // visible
-      const style = window.getComputedStyle(el as Element);
-      if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
-      if (style.pointerEvents === 'none') return false;
-      if (rect.width === 0 && rect.height === 0) return false;
-      // contain text 'Cost:' followed by number
-      const txt = (el as HTMLElement).innerText || '';
-      if (!/Cost:\s*[0-9,.]+/i.test(txt)) return false;
-      return true;
-    });
-
-  if (candidates.length === 0) return null;
-
-  // choose nearest by vertical gap then horizontal center distance
-  let best: { el: Element; rect: DOMRect } | null = null;
+  let best: { el: Element; text: string } | null = null;
   let bestScore = Infinity;
+  const baseCenterY = (baseRect.top + baseRect.bottom) / 2;
   const baseCenterX = (baseRect.left + baseRect.right) / 2;
-  for (const candidate of candidates) {
-    const rect = candidate.rect;
-    const verticalGap = Math.max(0, rect.top - baseRect.bottom);
-    const centerX = (rect.left + rect.right) / 2;
-    const horizontalGap = Math.abs(centerX - baseCenterX);
-    const score = verticalGap * 10000 + horizontalGap;
+
+  for (const c of matches) {
+    const r = (c.el as Element).getBoundingClientRect();
+    const centerY = (r.top + r.bottom) / 2;
+    const centerX = (r.left + r.right) / 2;
+    const verticalDist = Math.abs(centerY - baseCenterY);
+    const horizontalDist = Math.abs(centerX - baseCenterX);
+    const score = verticalDist * 10000 + horizontalDist;
     if (score < bestScore) {
       bestScore = score;
-      best = candidate;
+      best = c;
     }
   }
 
   if (!best) return null;
 
-  // extract number from innerText of best.el
-  const m = (best.el as HTMLElement).innerText.match(/Cost:\s*([0-9,.]+)/i);
-  if (m && m[1]) {
-    // normalize number: remove commas and spaces
-    const normalized = m[1].replace(/[,\s]/g, '');
-    return { el: best.el, costText: normalized };
-  }
-  return null;
+  // normalize numeric text: remove commas/spaces
+  const normalized = best.text.replace(/[,\s]/g, '');
+  return { el: best.el, npText: normalized };
 }
 
 // Utility: copy text to clipboard with fallback
@@ -207,18 +214,18 @@ export function clickElement(item: ClickItem): boolean {
     const clickedEl = clickNearestVisuallyAbove(elements[0] as HTMLElement, '.item-img');
     if (clickedEl) {
       clickedAny = true;
-      const found = findNearestBelowWithCost(clickedEl);
+      const found = findNPInSameShopItem(clickedEl);
       if (found) {
-        copyTextToClipboard(found.costText).catch(() => {});
+        copyTextToClipboard(found.npText).catch(() => {});
       }
     }
   } else if (matchType === 'last') {
     const clickedEl = clickNearestVisuallyAbove(elements[elements.length - 1] as HTMLElement, '.item-img');
     if (clickedEl) {
       clickedAny = true;
-      const found = findNearestBelowWithCost(clickedEl);
+      const found = findNPInSameShopItem(clickedEl);
       if (found) {
-        copyTextToClipboard(found.costText).catch(() => {});
+        copyTextToClipboard(found.npText).catch(() => {});
       }
     }
   } else if (matchType === 'all') {
@@ -226,9 +233,9 @@ export function clickElement(item: ClickItem): boolean {
       const clickedEl = clickNearestVisuallyAbove(el as HTMLElement, '.item-img');
       if (clickedEl) {
         clickedAny = true;
-        const found = findNearestBelowWithCost(clickedEl);
+        const found = findNPInSameShopItem(clickedEl);
         if (found) {
-          copyTextToClipboard(found.costText).catch(() => {});
+          copyTextToClipboard(found.npText).catch(() => {});
         }
       }
     }
@@ -238,9 +245,9 @@ export function clickElement(item: ClickItem): boolean {
       const clickedEl = clickNearestVisuallyAbove(elements[idx] as HTMLElement, '.item-img');
       if (clickedEl) {
         clickedAny = true;
-        const found = findNearestBelowWithCost(clickedEl);
+        const found = findNPInSameShopItem(clickedEl);
         if (found) {
-          copyTextToClipboard(found.costText).catch(() => {});
+          copyTextToClipboard(found.npText).catch(() => {});
         }
       }
     }
