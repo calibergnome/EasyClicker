@@ -1,4 +1,4 @@
-export function clickNearestVisuallyAbove(target: Element | string, candidateSelector = '.clickable, button, a', options: { allowOverlap?: boolean; minMatchRatio?: number } = {}): Element | null {
+export function clickNearestVisuallyAbove(target: Element | string, candidateSelector = '.item-img', options: { allowOverlap?: boolean; minMatchRatio?: number } = {}): Element | null {
   const { allowOverlap = false, minMatchRatio = 0.5 } = options;
 
   const getEl = (t: any) => (typeof t === 'string' ? document.querySelector(t) : t);

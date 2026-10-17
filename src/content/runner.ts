@@ -120,15 +120,15 @@ export function clickElement(item: ClickItem): void {
   const matchType = item.matchType || 'first';
 
   if (matchType === 'first') {
-    clickNearestVisuallyAbove(elements[0] as HTMLElement, '.clickable, button, a');
+    clickNearestVisuallyAbove(elements[0] as HTMLElement, '.item-img');
   } else if (matchType === 'last') {
-    clickNearestVisuallyAbove(elements[elements.length - 1] as HTMLElement, '.clickable, button, a');
+    clickNearestVisuallyAbove(elements[elements.length - 1] as HTMLElement, '.item-img');
   } else if (matchType === 'all') {
-    elements.forEach((el) => clickNearestVisuallyAbove(el as HTMLElement, '.clickable, button, a'));
+    elements.forEach((el) => clickNearestVisuallyAbove(el as HTMLElement, '.item-img'));
   } else if (matchType === 'nth') {
     const idx = (item.nthIndex !== undefined ? item.nthIndex : 1) - 1;
     if (idx >= 0 && idx < elements.length) {
-      clickNearestVisuallyAbove(elements[idx] as HTMLElement, '.clickable, button, a');
+      clickNearestVisuallyAbove(elements[idx] as HTMLElement, '.item-img');
     }
   }
 }
