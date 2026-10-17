@@ -1,1 +1,1 @@
-Exclude extension overlay from candidate results in visual click helper
+Exclude extension UI by checking ids/classes/attributes starting with 'ec-'

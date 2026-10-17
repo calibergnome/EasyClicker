@@ -7,7 +7,7 @@ export function clickNearestVisuallyAbove(target: Element | string, candidateSel
 
   const targetRect = (targetEl as Element).getBoundingClientRect();
 
-  // Exclude the extension's own overlay so we don't accidentally click our UI
+  // Exclude known extension overlay root
   const overlayEl = document.getElementById('ec-page-overlay');
 
   function isCandidateVisible(el: Element) {
@@ -18,6 +18,27 @@ export function clickNearestVisuallyAbove(target: Element | string, candidateSel
     const r = (el as Element).getBoundingClientRect();
     if (r.width === 0 && r.height === 0) return false;
     return true;
+  }
+
+  // Detect whether an element is part of the extension UI by checking ids, classes, or data-ec-* attrs
+  function isExtensionElement(el: Element | null): boolean {
+    let cur: Element | null = el;
+    while (cur && cur !== document.documentElement) {
+      // id starting with ec-
+      if (cur.id && cur.id.startsWith('ec-')) return true;
+      // any class that starts with ec-
+      for (let i = 0; i < cur.classList.length; i++) {
+        const cls = cur.classList.item(i);
+        if (cls && cls.startsWith('ec-')) return true;
+      }
+      // any attribute starting with data-ec
+      for (let j = 0; j < cur.attributes.length; j++) {
+        const attr = cur.attributes[j];
+        if (attr && attr.name && attr.name.startsWith('data-ec')) return true;
+      }
+      cur = cur.parentElement;
+    }
+    return false;
   }
 
   // Produce sample points across the bottom region of the rect to test top-mostness
@@ -85,7 +106,7 @@ export function clickNearestVisuallyAbove(target: Element | string, candidateSel
         matches++;
         continue;
       }
-      // Sometimes elementFromPoint returns a child text node wrapper; climb up a little to tolerate small wrappers
+      // Sometimes elementFromPoint returns a child; climb a few levels to tolerate wrappers
       let cur: Element | null = topEl;
       let climbed = false;
       for (let i = 0; i < 3 && cur && cur !== document.documentElement; i++) {
@@ -109,8 +130,9 @@ export function clickNearestVisuallyAbove(target: Element | string, candidateSel
     .filter((c) =>
       c !== targetEl &&
       document.body.contains(c) &&
-      // skip candidates that are inside our extension overlay
+      // skip candidates that are inside our extension overlay or otherwise marked as extension UI
       (!overlayEl || !overlayEl.contains(c)) &&
+      !isExtensionElement(c) &&
       isCandidateVisible(c),
     )
     .map((c) => ({ el: c as Element, rect: (c as Element).getBoundingClientRect() }));
