@@ -1,5 +1,5 @@
-export function clickNearestVisuallyAbove(target: Element | string, candidateSelector = '.clickable, button, a', options: { allowOverlap?: boolean } = {}): Element | null {
-  const { allowOverlap = false } = options;
+export function clickNearestVisuallyAbove(target: Element | string, candidateSelector = '.clickable, button, a', options: { allowOverlap?: boolean; minMatchRatio?: number } = {}): Element | null {
+  const { allowOverlap = false, minMatchRatio = 0.5 } = options;
 
   const getEl = (t: any) => (typeof t === 'string' ? document.querySelector(t) : t);
   const targetEl = getEl(target) as Element | null;
@@ -20,37 +20,88 @@ export function clickNearestVisuallyAbove(target: Element | string, candidateSel
     return true;
   }
 
-  // Checks whether the candidate is the top-most element at one or more sample points
-  function isTopmostAtRect(el: Element, rect: DOMRect): boolean {
-    // If rect is outside viewport, treat as not topmost
-    if (rect.bottom < 0 || rect.top > window.innerHeight || rect.right < 0 || rect.left > window.innerWidth) return false;
-
+  // Produce sample points across the bottom region of the rect to test top-mostness
+  function samplePointsForRect(rect: DOMRect): Array<{ x: number; y: number }> {
     const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
 
-    const centerX = clamp((rect.left + rect.right) / 2, 0, window.innerWidth - 1);
-    // pick a y slightly inside the bottom edge of the element so that it's within the element
-    const bottomY = clamp(rect.bottom - 1, 0, window.innerHeight - 1);
-    const quarterLeftX = clamp(rect.left + (rect.width || 0) * 0.25, 0, window.innerWidth - 1);
-    const quarterRightX = clamp(rect.left + (rect.width || 0) * 0.75, 0, window.innerWidth - 1);
+    // If rect is tiny, just sample center-bottom
+    const w = rect.width;
+    const left = rect.left;
+    const right = rect.right;
+    const bottom = rect.bottom;
 
-    const samplePoints: Array<{ x: number; y: number }> = [];
-    // prefer bottom center, but add left/right samples if element is wide enough
-    samplePoints.push({ x: centerX, y: bottomY });
-    if (rect.width >= 24) {
-      samplePoints.push({ x: quarterLeftX, y: bottomY });
-      samplePoints.push({ x: quarterRightX, y: bottomY });
+    const points: Array<{ x: number; y: number }> = [];
+
+    const bottomY = clamp(bottom - 1, 0, window.innerHeight - 1);
+    const centerX = clamp((left + right) / 2, 0, window.innerWidth - 1);
+    points.push({ x: centerX, y: bottomY });
+
+    if (w >= 24) {
+      const q1 = clamp(left + w * 0.25, 0, window.innerWidth - 1);
+      const q3 = clamp(left + w * 0.75, 0, window.innerWidth - 1);
+      points.push({ x: q1, y: bottomY });
+      points.push({ x: q3, y: bottomY });
     }
+
+    if (w >= 80) {
+      const t1 = clamp(left + w * 0.1, 0, window.innerWidth - 1);
+      const t2 = clamp(left + w * 0.9, 0, window.innerWidth - 1);
+      points.push({ x: t1, y: bottomY });
+      points.push({ x: t2, y: bottomY });
+    }
+
+    // Also sample slightly above the bottom to avoid hairline occluders
+    const altY = clamp(bottom - Math.min(6, Math.max(1, rect.height * 0.1)), 0, window.innerHeight - 1);
+    if (altY !== bottomY) {
+      points.push({ x: centerX, y: altY });
+    }
+
+    // Deduplicate points
+    const seen = new Set<string>();
+    const uniq: Array<{ x: number; y: number }> = [];
+    for (const p of points) {
+      const k = `${Math.round(p.x)}:${Math.round(p.y)}`;
+      if (!seen.has(k)) {
+        seen.add(k);
+        uniq.push(p);
+      }
+    }
+    return uniq;
+  }
+
+  // Return true if the candidate is top-most at a sufficient fraction of sample points
+  function isTopmostBySampling(el: Element, rect: DOMRect, minRatio: number): boolean {
+    // If rect is outside viewport, consider not topmost
+    if (rect.bottom < 0 || rect.top > window.innerHeight || rect.right < 0 || rect.left > window.innerWidth) return false;
+
+    const points = samplePointsForRect(rect);
+    if (points.length === 0) return false;
 
     let matches = 0;
-    for (const p of samplePoints) {
+    for (const p of points) {
       const topEl = document.elementFromPoint(p.x, p.y) as Element | null;
       if (!topEl) continue;
-      // consider it matching if the found element is the candidate or a descendant of it
-      if (topEl === el || el.contains(topEl)) matches++;
+      if (topEl === el || el.contains(topEl)) {
+        matches++;
+        continue;
+      }
+      // Sometimes elementFromPoint returns a child text node wrapper; climb up a little to tolerate small wrappers
+      let cur: Element | null = topEl;
+      let climbed = false;
+      for (let i = 0; i < 3 && cur && cur !== document.documentElement; i++) {
+        const parent = cur.parentElement;
+        if (!parent) break;
+        if (parent === el || el.contains(parent)) {
+          matches++;
+          climbed = true;
+          break;
+        }
+        cur = parent;
+      }
+      if (climbed) continue;
     }
 
-    // require at least one sample to match (loose) — ensures candidate is clickable/visible at some point
-    return matches > 0;
+    return matches / points.length >= minRatio;
   }
 
   const nodeList = Array.from(document.querySelectorAll(candidateSelector));
@@ -72,8 +123,8 @@ export function clickNearestVisuallyAbove(target: Element | string, candidateSel
   for (const { el, rect } of candidates) {
     if (!allowOverlap && rect.bottom > targetRect.top) continue;
 
-    // ensure candidate is actually top-most at its bottom area (i.e., not occluded)
-    if (!isTopmostAtRect(el, rect)) continue;
+    // Ensure candidate is actually top-most at sampled points (visual stacking check)
+    if (!isTopmostBySampling(el, rect, minMatchRatio)) continue;
 
     const verticalGap = Math.max(0, targetRect.top - rect.bottom);
     const rectCenterX = (rect.left + rect.right) / 2;
