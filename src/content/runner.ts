@@ -95,15 +95,16 @@ class WorkerTimer {
 
 const timer = new WorkerTimer();
 
-export function clickElement(item: ClickItem): void {
+// clickElement now returns boolean indicating whether any click was performed
+export function clickElement(item: ClickItem): boolean {
   const finalSelector = item.type === 'any' ? item.selector : item.type + (item.selector || '');
-  if (!finalSelector) return;
+  if (!finalSelector) return false;
 
   let elements;
   try {
     elements = Array.from(document.querySelectorAll(finalSelector));
   } catch (_e) {
-    return;
+    return false;
   }
 
   if (item.targetText) {
@@ -115,22 +116,31 @@ export function clickElement(item: ClickItem): void {
     });
   }
 
-  if (elements.length === 0) return;
+  if (elements.length === 0) return false;
 
   const matchType = item.matchType || 'first';
+  let clickedAny = false;
 
   if (matchType === 'first') {
-    clickNearestVisuallyAbove(elements[0] as HTMLElement, '.item-img');
+    const clickedEl = clickNearestVisuallyAbove(elements[0] as HTMLElement, '.item-img');
+    if (clickedEl) clickedAny = true;
   } else if (matchType === 'last') {
-    clickNearestVisuallyAbove(elements[elements.length - 1] as HTMLElement, '.item-img');
+    const clickedEl = clickNearestVisuallyAbove(elements[elements.length - 1] as HTMLElement, '.item-img');
+    if (clickedEl) clickedAny = true;
   } else if (matchType === 'all') {
-    elements.forEach((el) => clickNearestVisuallyAbove(el as HTMLElement, '.item-img'));
+    for (const el of elements) {
+      const clickedEl = clickNearestVisuallyAbove(el as HTMLElement, '.item-img');
+      if (clickedEl) clickedAny = true;
+    }
   } else if (matchType === 'nth') {
     const idx = (item.nthIndex !== undefined ? item.nthIndex : 1) - 1;
     if (idx >= 0 && idx < elements.length) {
-      clickNearestVisuallyAbove(elements[idx] as HTMLElement, '.item-img');
+      const clickedEl = clickNearestVisuallyAbove(elements[idx] as HTMLElement, '.item-img');
+      if (clickedEl) clickedAny = true;
     }
   }
+
+  return clickedAny;
 }
 
 export function canProcessItem(item: ClickItem): boolean {
@@ -143,13 +153,13 @@ export function canProcessItem(item: ClickItem): boolean {
   }
 }
 
-export function processItem(item: ClickItem): void {
-  if (canProcessItem(item)) {
-    clickElement(item);
-  }
+export function processItem(item: ClickItem): boolean {
+  if (!canProcessItem(item)) return false;
+  return clickElement(item);
 }
 
 export function startClicker() {
+  // Keep running until a matching element is clicked; then stop the clicker
   stopClicker();
   state.isRunning = true;
   state.sequenceStopFlag = false;
@@ -165,28 +175,41 @@ export function startClicker() {
     state.currentRunMode = runMode;
 
     if (runMode === 'parallel') {
+      // For each enabled item, set an interval; any interval that detects a click will stop the clicker
       items.forEach((item) => {
-        if (item.enabled) {
-          const itemIntervalMs =
-            item.interval && !isNaN(parseFloat(item.interval)) ? parseFloat(item.interval) * 1000 : globalIntervalMs;
+        if (!item.enabled) return;
+        const itemIntervalMs =
+          item.interval && !isNaN(parseFloat(item.interval)) ? parseFloat(item.interval) * 1000 : globalIntervalMs;
 
-          const id = timer.setInterval(() => processItem(item), itemIntervalMs);
-          state.itemIntervalIds.push(id);
-        }
+        const id = timer.setInterval(() => {
+          if (!state.isRunning || mySequenceId !== state.sequenceId) return;
+          try {
+            if (processItem(item)) {
+              stopClicker();
+            }
+          } catch (_e) {
+            // ignore per-item errors
+          }
+        }, itemIntervalMs);
+        state.itemIntervalIds.push(id);
       });
     } else {
+      // Sequence mode: loop through items repeatedly until a click occurs
       while (state.isRunning && !state.sequenceStopFlag && mySequenceId === state.sequenceId) {
         let processedAny = false;
         for (let i = 0; i < items.length; i++) {
           if (!state.isRunning || state.sequenceStopFlag || mySequenceId !== state.sequenceId) break;
           const item = items[i];
           if (item.enabled && canProcessItem(item)) {
-            clickElement(item);
+            const clicked = clickElement(item);
             processedAny = true;
+            if (clicked) {
+              browser.storage.local.set({ activeSequenceItemId: item.id, activeSequenceItemStart: Date.now() });
+              stopClicker();
+              break;
+            }
             const itemIntervalMs =
               item.interval && !isNaN(parseFloat(item.interval)) ? parseFloat(item.interval) * 1000 : globalIntervalMs;
-
-            browser.storage.local.set({ activeSequenceItemId: item.id, activeSequenceItemStart: Date.now() });
 
             await new Promise<void>((resolve) => {
               state.currentSequenceResolve = resolve;
