@@ -20,6 +20,39 @@ export function clickNearestVisuallyAbove(target: Element | string, candidateSel
     return true;
   }
 
+  // Checks whether the candidate is the top-most element at one or more sample points
+  function isTopmostAtRect(el: Element, rect: DOMRect): boolean {
+    // If rect is outside viewport, treat as not topmost
+    if (rect.bottom < 0 || rect.top > window.innerHeight || rect.right < 0 || rect.left > window.innerWidth) return false;
+
+    const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+
+    const centerX = clamp((rect.left + rect.right) / 2, 0, window.innerWidth - 1);
+    // pick a y slightly inside the bottom edge of the element so that it's within the element
+    const bottomY = clamp(rect.bottom - 1, 0, window.innerHeight - 1);
+    const quarterLeftX = clamp(rect.left + (rect.width || 0) * 0.25, 0, window.innerWidth - 1);
+    const quarterRightX = clamp(rect.left + (rect.width || 0) * 0.75, 0, window.innerWidth - 1);
+
+    const samplePoints: Array<{ x: number; y: number }> = [];
+    // prefer bottom center, but add left/right samples if element is wide enough
+    samplePoints.push({ x: centerX, y: bottomY });
+    if (rect.width >= 24) {
+      samplePoints.push({ x: quarterLeftX, y: bottomY });
+      samplePoints.push({ x: quarterRightX, y: bottomY });
+    }
+
+    let matches = 0;
+    for (const p of samplePoints) {
+      const topEl = document.elementFromPoint(p.x, p.y) as Element | null;
+      if (!topEl) continue;
+      // consider it matching if the found element is the candidate or a descendant of it
+      if (topEl === el || el.contains(topEl)) matches++;
+    }
+
+    // require at least one sample to match (loose) — ensures candidate is clickable/visible at some point
+    return matches > 0;
+  }
+
   const nodeList = Array.from(document.querySelectorAll(candidateSelector));
   const candidates = nodeList
     .filter((c) =>
@@ -38,6 +71,9 @@ export function clickNearestVisuallyAbove(target: Element | string, candidateSel
 
   for (const { el, rect } of candidates) {
     if (!allowOverlap && rect.bottom > targetRect.top) continue;
+
+    // ensure candidate is actually top-most at its bottom area (i.e., not occluded)
+    if (!isTopmostAtRect(el, rect)) continue;
 
     const verticalGap = Math.max(0, targetRect.top - rect.bottom);
     const rectCenterX = (rect.left + rect.right) / 2;
