@@ -95,6 +95,88 @@ class WorkerTimer {
 
 const timer = new WorkerTimer();
 
+// Utility: find nearest element visually below `baseEl` whose innerText contains "Cost:" followed by a number
+function findNearestBelowWithCost(baseEl: Element): { el: Element; costText: string } | null {
+  if (!baseEl || !(baseEl instanceof Element)) return null;
+  const baseRect = baseEl.getBoundingClientRect();
+
+  // Exclude extension overlay
+  const overlayEl = document.getElementById('ec-page-overlay');
+
+  const candidates = Array.from(document.querySelectorAll('*'))
+    .filter((c) => c !== baseEl && document.body.contains(c) && (!overlayEl || !overlayEl.contains(c)))
+    .map((c) => ({ el: c as Element, rect: (c as Element).getBoundingClientRect() }))
+    .filter(({ el, rect }) => {
+      // must be below
+      if (rect.top < baseRect.bottom) return false;
+      // visible
+      const style = window.getComputedStyle(el as Element);
+      if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+      if (style.pointerEvents === 'none') return false;
+      if (rect.width === 0 && rect.height === 0) return false;
+      // contain text 'Cost:' followed by number
+      const txt = (el as HTMLElement).innerText || '';
+      if (!/Cost:\s*[0-9,.]+/i.test(txt)) return false;
+      return true;
+    });
+
+  if (candidates.length === 0) return null;
+
+  // choose nearest by vertical gap then horizontal center distance
+  let best: { el: Element; rect: DOMRect } | null = null;
+  let bestScore = Infinity;
+  const baseCenterX = (baseRect.left + baseRect.right) / 2;
+  for (const candidate of candidates) {
+    const rect = candidate.rect;
+    const verticalGap = Math.max(0, rect.top - baseRect.bottom);
+    const centerX = (rect.left + rect.right) / 2;
+    const horizontalGap = Math.abs(centerX - baseCenterX);
+    const score = verticalGap * 10000 + horizontalGap;
+    if (score < bestScore) {
+      bestScore = score;
+      best = candidate;
+    }
+  }
+
+  if (!best) return null;
+
+  // extract number from innerText of best.el
+  const m = (best.el as HTMLElement).innerText.match(/Cost:\s*([0-9,.]+)/i);
+  if (m && m[1]) {
+    // normalize number: remove commas and spaces
+    const normalized = m[1].replace(/[,\s]/g, '');
+    return { el: best.el, costText: normalized };
+  }
+  return null;
+}
+
+// Utility: copy text to clipboard with fallback
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (_e) {
+    // fall through to execCommand
+  }
+
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch (_e) {
+    return false;
+  }
+}
+
 // clickElement now returns boolean indicating whether any click was performed
 export function clickElement(item: ClickItem): boolean {
   const finalSelector = item.type === 'any' ? item.selector : item.type + (item.selector || '');
@@ -123,20 +205,44 @@ export function clickElement(item: ClickItem): boolean {
 
   if (matchType === 'first') {
     const clickedEl = clickNearestVisuallyAbove(elements[0] as HTMLElement, '.item-img');
-    if (clickedEl) clickedAny = true;
+    if (clickedEl) {
+      clickedAny = true;
+      const found = findNearestBelowWithCost(clickedEl);
+      if (found) {
+        copyTextToClipboard(found.costText).catch(() => {});
+      }
+    }
   } else if (matchType === 'last') {
     const clickedEl = clickNearestVisuallyAbove(elements[elements.length - 1] as HTMLElement, '.item-img');
-    if (clickedEl) clickedAny = true;
+    if (clickedEl) {
+      clickedAny = true;
+      const found = findNearestBelowWithCost(clickedEl);
+      if (found) {
+        copyTextToClipboard(found.costText).catch(() => {});
+      }
+    }
   } else if (matchType === 'all') {
     for (const el of elements) {
       const clickedEl = clickNearestVisuallyAbove(el as HTMLElement, '.item-img');
-      if (clickedEl) clickedAny = true;
+      if (clickedEl) {
+        clickedAny = true;
+        const found = findNearestBelowWithCost(clickedEl);
+        if (found) {
+          copyTextToClipboard(found.costText).catch(() => {});
+        }
+      }
     }
   } else if (matchType === 'nth') {
     const idx = (item.nthIndex !== undefined ? item.nthIndex : 1) - 1;
     if (idx >= 0 && idx < elements.length) {
       const clickedEl = clickNearestVisuallyAbove(elements[idx] as HTMLElement, '.item-img');
-      if (clickedEl) clickedAny = true;
+      if (clickedEl) {
+        clickedAny = true;
+        const found = findNearestBelowWithCost(clickedEl);
+        if (found) {
+          copyTextToClipboard(found.costText).catch(() => {});
+        }
+      }
     }
   }
 
