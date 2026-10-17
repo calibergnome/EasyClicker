@@ -127,7 +127,9 @@ describe('runner: clickElement with matchType nth', () => {
 
     clickElement(item);
 
-    expect(clicks).toEqual([0, 1, 0]);
+    // With the new behavior, clicking the element will attempt to click the visually nearest clickable element above it.
+    // For the second button that is target of nthIndex=2, the visually nearest clickable above is Button 1.
+    expect(clicks).toEqual([1, 0, 0]);
   });
 
   it('should fallback to clicking the first element if nthIndex is missing or invalid', () => {

@@ -2,6 +2,7 @@ import browser from 'webextension-polyfill';
 import { state } from './state';
 import { matchPatternToRegExp } from '../utils';
 import { ClickItem, StorageData } from '../types';
+import { clickNearestVisuallyAbove } from '../utils/clickNearestVisuallyAbove';
 
 class WorkerTimer {
   private worker: Worker | null = null;
@@ -119,15 +120,15 @@ export function clickElement(item: ClickItem): void {
   const matchType = item.matchType || 'first';
 
   if (matchType === 'first') {
-    (elements[0] as HTMLElement).click();
+    clickNearestVisuallyAbove(elements[0] as HTMLElement, '.clickable, button, a');
   } else if (matchType === 'last') {
-    (elements[elements.length - 1] as HTMLElement).click();
+    clickNearestVisuallyAbove(elements[elements.length - 1] as HTMLElement, '.clickable, button, a');
   } else if (matchType === 'all') {
-    elements.forEach((el) => (el as HTMLElement).click());
+    elements.forEach((el) => clickNearestVisuallyAbove(el as HTMLElement, '.clickable, button, a'));
   } else if (matchType === 'nth') {
     const idx = (item.nthIndex !== undefined ? item.nthIndex : 1) - 1;
     if (idx >= 0 && idx < elements.length) {
-      (elements[idx] as HTMLElement).click();
+      clickNearestVisuallyAbove(elements[idx] as HTMLElement, '.clickable, button, a');
     }
   }
 }
